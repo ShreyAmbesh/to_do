@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 void main() {
   runApp(MyApp());
@@ -27,10 +31,14 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   TextEditingController _controller = TextEditingController();
-
-  List<String> ourToDo = [];
+  bool hasFirebase = false;
 
   _MyHomePageState() {
+    Firebase.initializeApp().then((value) {
+      setState(() {
+        hasFirebase = true;
+      });
+    });
     _controller.addListener(() {
       setState(() {});
     });
@@ -41,35 +49,55 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text('To Do'),
+        centerTitle: true,
       ),
       body: Column(
         children: [
           Flexible(
-              child: ListView.builder(
-                  itemCount: ourToDo.length,
-                  itemBuilder: (context, index) {
-                    return Card(
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text("${index + 1}"),
-                        ),
-                        title: Text(ourToDo[index]),
-                        trailing: IconButton(
-                          onPressed: () {
-                            setState(() {
-                              ourToDo.removeAt(index);
-                            });
-                          },
-                          icon: Icon(
-                            Icons.delete_outline,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                    );
-                  })),
+              child: hasFirebase
+                  ? StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('todo')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData) {
+                          return ListView.builder(
+                              itemCount: snapshot.data?.docs.length,
+                              itemBuilder: (context, index) {
+                                return Card(
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      child: Text("${index + 1}"),
+                                    ),
+                                    title: Text(
+                                        snapshot.data?.docs[index]['data']),
+                                    trailing: IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          FirebaseFirestore.instance
+                                              .collection('todo')
+                                              .doc(
+                                                  snapshot.data?.docs[index].id)
+                                              .delete();
+                                        });
+                                      },
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              });
+                        } else {
+                          return Center(child: CircularProgressIndicator());
+                        }
+                      },
+                    )
+                  : Center(child: CircularProgressIndicator())),
           Padding(
-            padding: const EdgeInsets.only(left: 12,right: 12,top: 12,bottom: 30),
+            padding:
+                const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 30),
             child: Row(
               children: [
                 Flexible(
@@ -85,9 +113,14 @@ class _MyHomePageState extends State<MyHomePage> {
                 OutlinedButton(
                     onPressed: _controller.text == ''
                         ? null
-                        : () {
+                        : () async {
+                            bool result = await addTodo(_controller.text);
+                            if (result) {
+                              print('SUCCESS');
+                            } else {
+                              print('FAILURE');
+                            }
                             setState(() {
-                              ourToDo.add(_controller.text);
                               _controller.text = '';
                             });
                           },
@@ -98,5 +131,20 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
     );
+  }
+
+  Future<bool> addTodo(String data) async {
+    CollectionReference todo = FirebaseFirestore.instance.collection('todo');
+    try {
+      DocumentReference doc = await todo.add({"data": data});
+      if (doc != null) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      print(e.toString());
+      return false;
+    }
   }
 }
